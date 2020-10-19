@@ -2,7 +2,7 @@ import json
 import numpy as np
 from random import random
 from GraphicEEGFrame import GraphicEEGFrame
-from EEGElectrodeAnalysis import EEGElectrodeAnalysis
+from cbPython.EEGElectrodeAnalysis import EEGElectrodeAnalysis
 
 class EEGAnalysis(object):
   """Actually processes the data from a file."""

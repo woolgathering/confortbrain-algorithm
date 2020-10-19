@@ -1,5 +1,5 @@
 import numpy as np
-from GraphicEEGFrame import GraphicEEGFrame
+from cbPython.GraphicEEGFrame import GraphicEEGFrame
 
 class EEGElectrodeAnalysis(object):
   """docstring for EEGElectrodeAnalysis."""
