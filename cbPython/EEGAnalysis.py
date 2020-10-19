@@ -33,13 +33,28 @@ class EEGAnalysis(object):
     # get the data from the file
     pass
 
-  def to_JSON(self):
-    return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
-
-
   def _interpolate(self, bin1, bin2):
     # interpoalte between bins to get freqs between bins
     pass
+
+  def write_JSON(self, json_path, indent):
+    file = open(path, 'w')
+    file.write('{\n')
+    for name,electrode in analysis.electrodes.items():
+      file.write('\"{}\": '.format(name))
+      file.write('{\n')
+      for i,f in enumerate(electrode.graphic_frames):
+        file.write('\"{}\": '.format(i))
+        file.write(f.to_JSON(indent))
+        if i<(len(electrode.graphic_frames)-1):
+          file.write(',\n')
+        else:
+          file.write('\n')
+      file.write('},\n') # leaves a trailing comma for now
+
+    file.write('}')
+    file.close()
+
 
 
   ################################
