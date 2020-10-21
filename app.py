@@ -1,4 +1,6 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
+
+from cbPython import EEGAnalysis
 
 app = Flask(__name__)
 
@@ -28,11 +30,18 @@ def hello_world():
 
 @app.route('/edf/fft-with-ica', methods=['GET'])
 def fft_with_ica():
-    file_location = request.args.get('file')
-    if file_location:
-        return file_location
-    else:
-        return "No file location"
+    # file_location = request.args.get('file')
+    # if file_location:
+    #     return jsonify(file_location)
+    # else:
+    #     return jsonify("File not specified")
+    a = EEGAnalysis.random(num_frames=100, sr=200, win_size=400)  # get a fake analysis
+    print(a.electrodes)  # print out a dictionary of electrodes
+    e = a.electrodes['Fp1']  # look at electrode FpZ
+    e.graphic_frames  # print out a dictionary of all the graphic objects, one per frame of analysis
+    f = e.graphic_frames[0]  # get the first frame
+    # get a string that is JSON formatted with an indent of 2 spaces for the data in this frame
+    return f.to_JSON(4)
 
 
 @app.route('/edf/fft-no-ica', methods=['GET'])

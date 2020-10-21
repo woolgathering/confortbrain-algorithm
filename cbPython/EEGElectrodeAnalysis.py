@@ -4,16 +4,46 @@ from cbPython.GraphicEEGFrame import GraphicEEGFrame
 class EEGElectrodeAnalysis(object):
   """docstring for EEGElectrodeAnalysis."""
 
-  def __init__(self, name=None, data=None, analysis=None):
+  def __init__(self, name=None, frames=None, analysis=None):
     super(EEGElectrodeAnalysis, self).__init__()
     self._name = name
-    self._data = data
+    self._frames = frames
     self._analysis = analysis
-    self._frames = None
-    self._graphic_frames = None
+    self._graphic_frames = []
+    self._bands = None
+
+    if frames is not None:
+      self._as_bands()
+      self._get_graphic_frames()
 
   def __repr__(self):
     return '{}({}, frames: {})'.format(self.__class__.__name__, self._name, len(self._frames))
+
+  def _get_graphic_frames(self):
+    for i,f in enumerate(self._frames):
+      gf = GraphicEEGFrame(i, self._name, f, self._analysis)
+      self._graphic_frames.append(gf)
+
+  def _as_bands(self):
+    self._bands = {name:[] for name in self._analysis.band_defs.keys()} # prepare the dictionary
+    band_idxs = self._get_idxs() # the indicies in each frame where we find what we're looking for
+    for w in self._frames:
+      for i,band in enumerate(self._bands.keys()): # bands in window
+        vals = w[band_idxs[i]]
+        self._bands[band].append(vals)
+    self._bands = {name:np.array(value) for name,value in self._bands.items()}
+
+  # get the indexes for the frequencies we actually want
+  # then we just use that to select relevant bins from the analysis windows
+  def _get_idxs(self):
+    idxs = []
+    for key,defin in self._analysis.band_defs.items():
+      f_idxs = []
+      freqs = self._analysis.fft_freqs[(self._analysis.fft_freqs>=defin[0]) & (self._analysis.fft_freqs<defin[1])]
+      for f in freqs:
+        f_idxs.append((np.argwhere(self._analysis.fft_freqs==f)[0][0]))
+      idxs.append(f_idxs)
+    return idxs
 
   @classmethod
   def random(cls, name, num_frames=100, analysis=None):
@@ -30,14 +60,12 @@ class EEGElectrodeAnalysis(object):
     return this
 
 
-  def data():
-      doc = "The data property."
+  def frames():
+      doc = "The frames property."
       def fget(self):
-          return self._data
-      def fset(self, value):
-          self._data = value
+          return self._frames
       return locals()
-  data = property(**data())
+  frames = property(**frames())
 
   def name():
       doc = "The name of the electrode. Unsettable except upon instantiation."
@@ -46,12 +74,16 @@ class EEGElectrodeAnalysis(object):
       return locals()
   name = property(**name())
 
-  def frames():
-      doc = "The frames property."
+  def bands():
+      doc = "The bands property."
       def fget(self):
-          return self._frames
+          return self._bands
+      def fset(self, value):
+          self._bands = value
+      def fdel(self):
+          del self._bands
       return locals()
-  frames = property(**frames())
+  bands = property(**bands())
 
   def graphic_frames():
       doc = "The graphic_frames property."
