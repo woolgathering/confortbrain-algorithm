@@ -87,7 +87,7 @@ class EEGAnalysis(object):
     self._data = np.array(data).T # make it an np array and transpose it
 
   def _read_edf(self):
-    edf = mne.io.read_raw_edf(self._file, preload=True) # load the file
+    edf = mne.io.read_raw_edf(self._file, preload=True, verbose=0) # load the file
     self._electrode_order = edf.ch_names # a list of channel names
     self._data = edf.get_data() # get everything for now
     self._sr = edf.info['sfreq'] # samplerate
