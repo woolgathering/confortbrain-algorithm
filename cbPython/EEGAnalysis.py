@@ -1,12 +1,20 @@
 import json
 import os
+import mne
 import numpy as np
 from random import random
 from cbPython.GraphicEEGFrame import GraphicEEGFrame
 from cbPython.EEGElectrodeAnalysis import EEGElectrodeAnalysis
 
 class EEGAnalysis(object):
-  """Actually processes the data from a file."""
+  """Actually processes the data from a file.
+
+  Usage:
+    data_path = './data/test_data.txt'
+    a = EEGAnalysis(data_path, overlap=0.5, sr=200, win_size=400)
+    a.process()
+    a.write_JSON('./data/test_data_ANALYZED.json')
+  """
 
   def __init__(self, file, overlap=0.5, sr=200, win_size=400, electrode_order=None):
     super(EEGAnalysis, self).__init__()
@@ -21,22 +29,28 @@ class EEGAnalysis(object):
       'Gamma': (16, 20)
     } # name: (minHz, maxHz)
     self._fft_freqs = np.fft.rfftfreq(win_size, 1/sr) # the freqs of the bins
-    self._window = np.hanning(win_size) # the window
-
+    self._sr = sr # samplerate
+    self._window = np.hamming(win_size) # the window
     if electrode_order is None:
       self._electrode_order = ['Fp1', 'Fp2', 'F7', 'F3', 'FZ', 'F4', 'F8', 'T7', 'C3', 'CZ', 'C4', 'T8', 'P7', 'P3', 'Pz', 'P4'] # 10-20 electrodes
     else:
       self._electrode_order = electrode_order
+
+    self._set_defaults() # set other attributes to None
 
     # read the data if this is not a random analysis
     if file is not None:
       self._read_data() # read the data in
       self._check_data_mismatch() # check for data channel mismatch
 
+
+  def _set_defaults(self):
+    self._frames = None
+    self._electrodes = None
+
   def _check_data_mismatch(self):
     if len(self._electrode_order) != len(self._data):
       raise TypeError('Number of channels in data do not match number of electrodes: {} != {}'.format(len(self._electrode_order), len(self._data)))
-
     tss = 0
     for e in self._data:
       tss += len(e)
@@ -46,25 +60,40 @@ class EEGAnalysis(object):
   def _read_data(self):
     name, ext = os.path.splitext(self._file)
     ext = ext.lower() # make it lowercase
-    if ext=='.txt':
-      data = []
-      # this will work with any textfile that is space delimted, even when it's inconsistent
-      # in terms of the number of spaces
-      with open(self._file) as f:
-        for i, l in enumerate(f):
-          l = l.split(' ')
-          arr = []
-          for string in l:
-            try:
-              value = float(string)
-              arr.append(value)
-            except ValueError:
-              pass
-          data.append(arr) # append the samples to the data
-      self._data = np.array(data).T # make it an np array and transpose it
+    supported_filetypes = ['.txt', '.edf'] # supported filetypes
+    if ext in supported_filetypes:
+      if ext == '.txt':
+        self._read_txt()
+      elif ext == '.edf':
+        self._read_edf()
     else:
-      # check for EDF file
       raise TypeError('Not supported filetype: \'{}\''.format(ext))
+
+  def _read_txt(self):
+    data = []
+    # this will work with any textfile that is space delimted, even when it's inconsistent
+    # in terms of the number of spaces
+    with open(self._file) as f:
+      for i, l in enumerate(f):
+        l = l.split(' ')
+        arr = []
+        for string in l:
+          try:
+            value = float(string)
+            arr.append(value)
+          except ValueError:
+            pass
+        data.append(arr) # append the samples to the data
+    self._data = np.array(data).T # make it an np array and transpose it
+
+  def _read_edf(self):
+    edf = mne.io.read_raw_edf(self._file, preload=True) # load the file
+    self._electrode_order = edf.ch_names # a list of channel names
+    self._data = edf.get_data() # get everything for now
+    self._sr = edf.info['sfreq'] # samplerate
+    self._win_size = int(self._sr*2) # default to an epoch of 2 seconds
+    self._edf_info = edf.info # save the info for now
+    edf.close() # close it
 
   def _interpolate(self, bin1, bin2):
     # interpoalte between bins to get freqs between bins
@@ -84,10 +113,9 @@ class EEGAnalysis(object):
         stop = start+self._win_size
         win = e[start:stop] # get the data
         win = np.pad(win, (0, self._win_size-len(win))) * self._window # pad the data and window it
-        mags = np.abs(np.fft.rfft(win)/self._win_size) # analyze (CURRENTLY NOT YET SCALED!!!!)
+        mags = np.abs(np.fft.rfft(win)/self._win_size) # analyze and rescale
         self._frames[i][j] = mags # remember all the freqs for now (memory savings to be had...)
 
-      # self.electrodes.append(EEGElectrodeAnalysis(self._electrode_order[i], self._frames[i], self))
       self.electrodes[self._electrode_order[i]] = EEGElectrodeAnalysis(self._electrode_order[i], self._frames[i], self)
 
   def _collect_to_bands(self):
@@ -109,7 +137,6 @@ class EEGAnalysis(object):
         else:
           file.write('\n')
       file.write('},\n') # closing }. Leaves a trailing comma for now
-
     file.write('}') # closing }
     file.close()
 
@@ -124,8 +151,6 @@ class EEGAnalysis(object):
           return self._fft_freqs
       def fset(self, value):
           self._fft_freqs = value
-      def fdel(self):
-          del self._fft_freqs
       return locals()
   fft_freqs = property(**fft_freqs())
 
@@ -135,21 +160,8 @@ class EEGAnalysis(object):
           return self._frames
       def fset(self, value):
           self._frames = value
-      def fdel(self):
-          del self._frames
       return locals()
   frames = property(**frames())
-
-  def graphic_frames():
-      doc = "The graphic_frames property."
-      def fget(self):
-          return self._graphic_frames
-      def fset(self, value):
-          self._graphic_frames = value
-      def fdel(self):
-          del self._graphic_frames
-      return locals()
-  graphic_frames = property(**graphic_frames())
 
   def electrode_order():
       doc = "The electrode_order property."
@@ -157,8 +169,6 @@ class EEGAnalysis(object):
           return self._electrode_order
       def fset(self, value):
           self._electrode_order = value
-      def fdel(self):
-          del self._electrode_order
       return locals()
   electrode_order = property(**electrode_order())
 
@@ -168,8 +178,6 @@ class EEGAnalysis(object):
           return self._sr
       def fset(self, value):
           self._sr = value
-      def fdel(self):
-          del self._sr
       return locals()
   sr = property(**sr())
 
@@ -179,8 +187,6 @@ class EEGAnalysis(object):
           return self._overlap
       def fset(self, value):
           self._overlap = value
-      def fdel(self):
-          del self._overlap
       return locals()
   overlap = property(**overlap())
 
@@ -190,19 +196,15 @@ class EEGAnalysis(object):
           return self._win_size
       def fset(self, value):
           self._win_size = value
-      def fdel(self):
-          del self._win_size
       return locals()
   win_size = property(**win_size())
 
   def data():
-      doc = "The data property."
+      doc = "The actual data, organized in the shape (num_electrodes, num_samples)."
       def fget(self):
           return self._data
       def fset(self, value):
           self._data = value
-      def fdel(self):
-          del self._data
       return locals()
   data = property(**data())
 
@@ -212,8 +214,6 @@ class EEGAnalysis(object):
           return self._band_defs
       def fset(self, value):
           self._band_defs = value
-      def fdel(self):
-          del self._band_defs
       return locals()
   band_defs = property(**band_defs())
 
@@ -223,8 +223,6 @@ class EEGAnalysis(object):
           return self._electrodes
       def fset(self, value):
           self._electrodes = value
-      def fdel(self):
-          del self._electrodes
       return locals()
   electrodes = property(**electrodes())
 
@@ -234,8 +232,6 @@ class EEGAnalysis(object):
           return self._window
       def fset(self, value):
           self._window = value
-      def fdel(self):
-          del self._window
       return locals()
   window = property(**window())
 
