@@ -3,6 +3,7 @@ import os
 import mne
 import numpy as np
 from random import random
+from sklearn.decomposition import FastICA
 from cbPython.GraphicEEGFrame import GraphicEEGFrame
 from cbPython.EEGElectrodeAnalysis import EEGElectrodeAnalysis
 
@@ -12,15 +13,13 @@ class EEGAnalysis(object):
   Usage:
     data_path = './data/test_data.txt'
     a = EEGAnalysis(data_path, overlap=0.5, sr=200, win_size=400)
-    a.process()
+    a.process_spectral(epoch=2, overlap=0.5, ica=True)
     a.write_JSON('./data/test_data_ANALYZED.json')
   """
 
-  def __init__(self, file, overlap=0.5, sr=200, win_size=400, electrode_order=None):
+  def __init__(self, file, sr=200, electrode_order=None):
     super(EEGAnalysis, self).__init__()
     self._file = file
-    self._win_size = win_size
-    self._overlap = overlap
     self._band_defs = {
       'Delta': (0.3, 4),
       'Theta': (4, 8),
@@ -28,15 +27,14 @@ class EEGAnalysis(object):
       'Beta': (12, 16),
       'Gamma': (16, 20)
     } # name: (minHz, maxHz)
-    self._fft_freqs = np.fft.rfftfreq(win_size, 1/sr) # the freqs of the bins
     self._sr = sr # samplerate
-    self._window = np.hamming(win_size) # the window
     if electrode_order is None:
       self._electrode_order = ['Fp1', 'Fp2', 'F7', 'F3', 'FZ', 'F4', 'F8', 'T7', 'C3', 'CZ', 'C4', 'T8', 'P7', 'P3', 'Pz', 'P4'] # 10-20 electrodes
     else:
       self._electrode_order = electrode_order
 
     self._set_defaults() # set other attributes to None
+    self._ica_done = False # ICA has not been performed yet
 
     # read the data if this is not a random analysis
     if file is not None:
@@ -91,7 +89,6 @@ class EEGAnalysis(object):
     self._electrode_order = edf.ch_names # a list of channel names
     self._data = edf.get_data() # get everything for now
     self._sr = edf.info['sfreq'] # samplerate
-    self._win_size = int(self._sr*2) # default to an epoch of 2 seconds
     self._edf_info = edf.info # save the info for now
     edf.close() # close it
 
@@ -101,13 +98,24 @@ class EEGAnalysis(object):
 
   # where math-magic happens
   # arrays which are less than the win_size due to not integer iterations are zero-padded
-  def process(self):
+  def process_spectral(self, epoch=2, overlap=0.5, ica=False):
+    if ica & (self._ica_done==False):
+      self.process_ica_plain() # do ICA
+
+    self._win_size = self._sr*epoch # remember
+    self._overlap = overlap # remember
+    self._fft_freqs = np.fft.rfftfreq(self._win_size, 1/self._sr) # the freqs of the bins
+    self._window = np.hamming(self._win_size) # the window (adjustable??)
+
     advance = int(self._win_size * self._overlap) # advance in samples
     iter = int(len(self._data[0]) / advance)
     self._frames = np.zeros((len(self._data), iter, len(self._fft_freqs))) # initialize space for the magnitudes
     self.electrodes = {}
     for i,e in enumerate(self._data):
-      # e is a timeseries from a single electrode
+      # e is a timeseries from a single electrode, i is the number of the electrode
+      if self._ica_done:
+        e = self._mixing_matrix[:,i][i] * e
+
       for j in range(iter):
         start = j*advance
         stop = start+self._win_size
@@ -117,6 +125,19 @@ class EEGAnalysis(object):
         self._frames[i][j] = mags # remember all the freqs for now (memory savings to be had...)
 
       self.electrodes[self._electrode_order[i]] = EEGElectrodeAnalysis(self._electrode_order[i], self._frames[i], self)
+
+  # process ICA manually (when working with TXT files)
+  def process_ica_plain(self):
+    ica = FastICA(n_components=len(self._electrode_order), random_state=0, max_iter=50000, tol=0.001)
+    self._data = ica.fit_transform(self._data.T) # find sources
+    self._data = self._data.T # transform it back for the FFT
+    self._mixing_matrix = ica.mixing_ # the (inverted??) mixing matrix
+    self._ica_done = True # remember we did ICA
+    """
+    The sklearn documentation is a bit confusing: it's not clear if the unmixing
+    matrix is applied when the sources are returned. Calling fit_transform()
+    does not return the same results as calling fit(), then transform().
+    """
 
   def _collect_to_bands(self):
     if self._frames is None:
