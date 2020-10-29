@@ -35,18 +35,18 @@ class EEGAnalysis(object):
 
     self._set_defaults() # set other attributes to None
     self._ica_done = False # ICA has not been performed yet
+    self._verbose = 0 # no verbosity
 
     # read the data if this is not a random analysis
     if file is not None:
       self._read_data() # read the data in
-      self._check_data_mismatch() # check for data channel mismatch
-
+      self._validate_data() # check for data channel mismatch
 
   def _set_defaults(self):
     self._frames = None
     self._electrodes = None
 
-  def _check_data_mismatch(self):
+  def _validate_data(self):
     if len(self._electrode_order) != len(self._data):
       raise TypeError('Number of channels in data do not match number of electrodes: {} != {}'.format(len(self._electrode_order), len(self._data)))
     tss = 0
@@ -82,15 +82,18 @@ class EEGAnalysis(object):
           except ValueError:
             pass
         data.append(arr) # append the samples to the data
+
     self._data = np.array(data).T # make it an np array and transpose it
+    self._make_raw(self._data)
 
   def _read_edf(self):
-    edf = mne.io.read_raw_edf(self._file, preload=True, verbose=0) # load the file
+    edf = mne.io.read_raw_edf(self._file, preload=True, verbose=self._verbose) # load the file
+    self._raw = edf # keep the raw instance
     self._electrode_order = edf.ch_names # a list of channel names
     self._data = edf.get_data() # get everything for now
     self._sr = edf.info['sfreq'] # samplerate
     self._edf_info = edf.info # save the info for now
-    edf.close() # close it
+    # edf.close() # close it
 
   def _interpolate(self, bin1, bin2):
     # interpoalte between bins to get freqs between bins
@@ -100,8 +103,8 @@ class EEGAnalysis(object):
   # arrays which are less than the win_size due to not integer iterations are zero-padded
   def process_spectral(self, epoch=2, overlap=0.5, ica=False):
     if ica & (self._ica_done==False):
-      self.process_ica_plain() # do ICA
-
+      # self.process_ica_manually() # do ICA
+      self.process_ica() # process the ICA as a RawArray
     self._win_size = self._sr*epoch # remember
     self._overlap = overlap # remember
     self._fft_freqs = np.fft.rfftfreq(self._win_size, 1/self._sr) # the freqs of the bins
@@ -113,9 +116,6 @@ class EEGAnalysis(object):
     self.electrodes = {}
     for i,e in enumerate(self._data):
       # e is a timeseries from a single electrode, i is the number of the electrode
-      if self._ica_done:
-        e = self._mixing_matrix[:,i][i] * e
-
       for j in range(iter):
         start = j*advance
         stop = start+self._win_size
@@ -127,17 +127,31 @@ class EEGAnalysis(object):
       self.electrodes[self._electrode_order[i]] = EEGElectrodeAnalysis(self._electrode_order[i], self._frames[i], self)
 
   # process ICA manually (when working with TXT files)
-  def process_ica_plain(self):
-    ica = FastICA(n_components=len(self._electrode_order), random_state=0, max_iter=50000, tol=0.001)
-    self._data = ica.fit_transform(self._data.T) # find sources
-    self._data = self._data.T # transform it back for the FFT
-    self._mixing_matrix = ica.mixing_ # the (inverted??) mixing matrix
-    self._ica_done = True # remember we did ICA
+  def process_ica_manually(self):
     """
     The sklearn documentation is a bit confusing: it's not clear if the unmixing
     matrix is applied when the sources are returned. Calling fit_transform()
     does not return the same results as calling fit(), then transform().
     """
+    ica = FastICA(n_components=len(self._electrode_order), random_state=0, max_iter=50000, tol=0.001)
+    U = ica.fit_transform(self._data.T) # find sources
+    self._mixing_matrix = ica.mixing_ # the (inverted??) mixing matrix
+    # self._data = (self._data.dot(self._mixing_matrix)).T # transform it back for the FFT
+    self._data = np.dot(self._data, np.linalg.pinv(self._mixing_matrix)).T # transform it back for the FFT
+    self._ica_done = True # remember we did ICA
+
+  def process_ica(self):
+    self._ica = mne.preprocessing.ICA(n_components=len(self._electrode_order), verbose=self._verbose)
+    self._ica.fit(self._raw) # fit it
+    self._data = self._ica.get_sources(self._raw).get_data() # retrieve the data itself
+    self._ica_done = True
+
+  def _make_raw(self, data):
+    """
+    If the montage can be provided, a lot more info can be gleaned.
+    """
+    info = mne.create_info(ch_names=self._electrode_order, sfreq=self._sr, ch_types=['eeg']*len(self._electrode_order))
+    self._raw = mne.io.RawArray(data, info, verbose=self._verbose)
 
   def _collect_to_bands(self):
     if self._frames is None:
