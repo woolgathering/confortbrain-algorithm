@@ -129,6 +129,8 @@ class EEGAnalysis(object):
   # process ICA manually (when working with TXT files)
   def process_ica_manually(self):
     """
+    This method replaces self._data with the sources as found by ICA
+
     The sklearn documentation is a bit confusing: it's not clear if the unmixing
     matrix is applied when the sources are returned. Calling fit_transform()
     does not return the same results as calling fit(), then transform().
@@ -141,6 +143,9 @@ class EEGAnalysis(object):
     self._ica_done = True # remember we did ICA
 
   def process_ica(self):
+    """
+    This method replaces self._data with the sources as found by ICA
+    """
     self._ica = mne.preprocessing.ICA(n_components=len(self._electrode_order), verbose=self._verbose)
     self._ica.fit(self._raw) # fit it
     self._data = self._ica.get_sources(self._raw).get_data() # retrieve the data itself
@@ -174,8 +179,6 @@ class EEGAnalysis(object):
       file.write('},\n') # closing }. Leaves a trailing comma for now
     file.write('}') # closing }
     file.close()
-
-
 
   ################################
   ## Properties
