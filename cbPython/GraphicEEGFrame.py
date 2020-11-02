@@ -16,7 +16,6 @@ class GraphicEEGFrame(object):
     if values is not None:
       self._populate_dict() # populate the dictionary with the right values
 
-
   def _populate_dict(self, rand=False):
     ###############################
     ## check to make sure that the bands are always returned in order!!
@@ -61,14 +60,15 @@ class GraphicEEGFrame(object):
   def to_JSON(self, indent=None):
     return json.dumps(self._dict, indent=indent)
 
+  ################################
+  ## Properties
+  ################################
   def values():
-      doc = "The values property."
+      doc = "The actual analytic values of the frame."
       def fget(self):
           return self._values
       def fset(self, value):
           self._values = value
-      def fdel(self):
-          del self._values
       return locals()
   values = property(**values())
 
@@ -78,8 +78,6 @@ class GraphicEEGFrame(object):
           return self._num
       def fset(self, value):
           self._num = value
-      def fdel(self):
-          del self._num
       return locals()
   num = property(**num())
 

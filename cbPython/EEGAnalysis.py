@@ -1,8 +1,6 @@
-import json
 import os
 import mne
 import numpy as np
-from random import random
 from sklearn.decomposition import FastICA
 from cbPython.GraphicEEGFrame import GraphicEEGFrame
 from cbPython.EEGElectrodeAnalysis import EEGElectrodeAnalysis
@@ -15,6 +13,8 @@ class EEGAnalysis(object):
     a = EEGAnalysis(data_path, overlap=0.5, sr=200, win_size=400)
     a.process_spectral(epoch=2, overlap=0.5, ica=True)
     a.write_JSON('./data/test_data_ANALYZED.json')
+
+  Also works with EDF and EDF+ files.
   """
 
   def __init__(self, file, sr=200, electrode_order=None):
@@ -68,9 +68,11 @@ class EEGAnalysis(object):
       raise TypeError('Not supported filetype: \'{}\''.format(ext))
 
   def _read_txt(self):
+    """
+    This will work with any textfile that is space delimted, even when it's inconsistent
+    in terms of the number of spaces.
+    """
     data = []
-    # this will work with any textfile that is space delimted, even when it's inconsistent
-    # in terms of the number of spaces
     with open(self._file) as f:
       for i, l in enumerate(f):
         l = l.split(' ')
@@ -95,21 +97,29 @@ class EEGAnalysis(object):
     self._edf_info = edf.info # save the info for now
     # edf.close() # close it
 
-  def _interpolate(self, bin1, bin2):
-    # interpoalte between bins to get freqs between bins
+  def _interpolate(self, freq):
+    """
+    Method placeholder that will allow one to ask for the magnitude of some frequency.
+    """
     pass
 
   # where math-magic happens
   # arrays which are less than the win_size due to not integer iterations are zero-padded
   def process_spectral(self, epoch=2, overlap=0.5, ica=False):
+    """
+    The heart of analysis.
+
+    - epoch is in seconds such that the window is samplrerate*epoch
+    - overlap is just as it sounds.
+    - if ica is true, then source separation is performed. Otherwise not. If ICA has been
+      performed already, a flag is set and it is not done again.
+    """
     if ica & (self._ica_done==False):
-      # self.process_ica_manually() # do ICA
       self.process_ica() # process the ICA as a RawArray
     self._win_size = self._sr*epoch # remember
     self._overlap = overlap # remember
     self._fft_freqs = np.fft.rfftfreq(self._win_size, 1/self._sr) # the freqs of the bins
-    self._window = np.hamming(self._win_size) # the window (adjustable??)
-
+    window = np.hamming(self._win_size) # the window (adjustable??)
     advance = int(self._win_size * self._overlap) # advance in samples
     iter = int(len(self._data[0]) / advance)
     self._frames = np.zeros((len(self._data), iter, len(self._fft_freqs))) # initialize space for the magnitudes
@@ -120,7 +130,7 @@ class EEGAnalysis(object):
         start = j*advance
         stop = start+self._win_size
         win = e[start:stop] # get the data
-        win = np.pad(win, (0, self._win_size-len(win))) * self._window # pad the data and window it
+        win = np.pad(win, (0, self._win_size-len(win))) * window # pad the data and window it
         mags = np.abs(np.fft.rfft(win)/self._win_size) # analyze and rescale
         self._frames[i][j] = mags # remember all the freqs for now (memory savings to be had...)
 
@@ -146,21 +156,20 @@ class EEGAnalysis(object):
     """
     This method replaces self._data with the sources as found by ICA
     """
-    self._ica = mne.preprocessing.ICA(n_components=len(self._electrode_order), verbose=self._verbose)
-    self._ica.fit(self._raw) # fit it
-    self._data = self._ica.get_sources(self._raw).get_data() # retrieve the data itself
-    self._ica_done = True
+    if self._ica_done:
+      print ('ICA has already been performed... Skipping.')
+    else:
+      self._ica = mne.preprocessing.ICA(n_components=len(self._electrode_order), verbose=self._verbose)
+      self._ica.fit(self._raw) # fit it
+      self._data = self._ica.get_sources(self._raw).get_data() # retrieve the data itself
+      self._ica_done = True
 
   def _make_raw(self, data):
     """
-    If the montage can be provided, a lot more info can be gleaned.
+    Make a RawArray from TXT data. If the montage can be provided, a lot more info can be gleaned.
     """
     info = mne.create_info(ch_names=self._electrode_order, sfreq=self._sr, ch_types=['eeg']*len(self._electrode_order))
     self._raw = mne.io.RawArray(data, info, verbose=self._verbose)
-
-  def _collect_to_bands(self):
-    if self._frames is None:
-      raise ValueError('Analysis has not been run (frames are empty)')
 
   # write a huge JSON file of the entire analysis
   def write_JSON(self, json_path, indent=None):
@@ -183,98 +192,92 @@ class EEGAnalysis(object):
   ################################
   ## Properties
   ################################
+  def verbose():
+    doc = "Verbosity."
+    def fget(self):
+      return self._verbose
+    def fset(self, value):
+      self._verbose = value
+    return locals()
+  verbose = property(**verbose())
+
   def fft_freqs():
-      doc = "The fft_freqs property."
-      def fget(self):
-          return self._fft_freqs
-      def fset(self, value):
-          self._fft_freqs = value
-      return locals()
+    doc = "An array of the edge freqencies of the bins in the analysis."""
+    def fget(self):
+      return self._fft_freqs
+    def fset(self, value):
+      self._fft_freqs = value
+    return locals()
   fft_freqs = property(**fft_freqs())
 
   def frames():
-      doc = "The frames property."
-      def fget(self):
-          return self._frames
-      def fset(self, value):
-          self._frames = value
-      return locals()
+    doc = "The frames of the analysis. Before analysis is run, this is None."
+    def fget(self):
+      return self._frames
+    def fset(self, value):
+      self._frames = value
+    return locals()
   frames = property(**frames())
 
   def electrode_order():
-      doc = "The electrode_order property."
-      def fget(self):
-          return self._electrode_order
-      def fset(self, value):
-          self._electrode_order = value
-      return locals()
+    doc = "The electrode order. Purely for labeling in the JSON and has no effect on the analytic process."
+    def fget(self):
+      return self._electrode_order
+    def fset(self, value):
+      self._electrode_order = value
+    return locals()
   electrode_order = property(**electrode_order())
 
   def sr():
-      doc = "The sr property."
-      def fget(self):
-          return self._sr
-      def fset(self, value):
-          self._sr = value
-      return locals()
+    doc = "The samplerate of the data. Defaults to 200Hz"
+    def fget(self):
+      return self._sr
+    def fset(self, value):
+      self._sr = value
+    return locals()
   sr = property(**sr())
 
   def overlap():
-      doc = "The overlap property."
-      def fget(self):
-          return self._overlap
-      def fset(self, value):
-          self._overlap = value
-      return locals()
+    doc = "The overlap of the analysis. Defaults to 0.5."
+    def fget(self):
+      return self._overlap
+    def fset(self, value):
+      self._overlap = value
+    return locals()
   overlap = property(**overlap())
 
-  def win_size():
-      doc = "The win_size property."
-      def fget(self):
-          return self._win_size
-      def fset(self, value):
-          self._win_size = value
-      return locals()
-  win_size = property(**win_size())
-
   def data():
-      doc = "The actual data, organized in the shape (num_electrodes, num_samples)."
-      def fget(self):
-          return self._data
-      def fset(self, value):
-          self._data = value
-      return locals()
+    doc = "The actual data, organized in the shape (num_electrodes, num_samples)."
+    def fget(self):
+      return self._data
+    def fset(self, value):
+      self._data = value
+    return locals()
   data = property(**data())
 
   def band_defs():
-      doc = "The _band_defs property."
-      def fget(self):
-          return self._band_defs
-      def fset(self, value):
-          self._band_defs = value
-      return locals()
+    doc = "The edge frequencies for the bands as a Dictionary. Delinations are abitrary and there can be an arbitarary number of bands."
+    def fget(self):
+      return self._band_defs
+    def fset(self, value):
+      self._band_defs = value
+    return locals()
   band_defs = property(**band_defs())
 
   def electrodes():
-      doc = "The electrodes property."
-      def fget(self):
-          return self._electrodes
-      def fset(self, value):
-          self._electrodes = value
-      return locals()
+    doc = "Dictionary that holds the EEGElectrodeAnalysis objects. Before analysis, this is None."
+    def fget(self):
+      return self._electrodes
+    def fset(self, value):
+      self._electrodes = value
+    return locals()
   electrodes = property(**electrodes())
 
-  def window():
-      doc = "The window property."
-      def fget(self):
-          return self._window
-      def fset(self, value):
-          self._window = value
-      return locals()
-  window = property(**window())
-
   @classmethod
-  def random(cls, num_frames=100, sr=200, win_size=400):
+  def random(cls, num_frames=100):
+    """
+    Make a random analysis (for testing). Uses default everything.
+    """
     analysis = cls(None)
     analysis._electrodes = {name:EEGElectrodeAnalysis.random(name, num_frames, analysis) for name in analysis._electrode_order}
     return analysis

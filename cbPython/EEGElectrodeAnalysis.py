@@ -2,7 +2,9 @@ import numpy as np
 from cbPython.GraphicEEGFrame import GraphicEEGFrame
 
 class EEGElectrodeAnalysis(object):
-  """docstring for EEGElectrodeAnalysis."""
+  """
+  An analyzed electrode. Contains all the frames from the electrode. Mostly for convenice.
+  """
 
   def __init__(self, name=None, frames=None, analysis=None):
     super(EEGElectrodeAnalysis, self).__init__()
@@ -54,14 +56,15 @@ class EEGElectrodeAnalysis(object):
       g_rand = GraphicEEGFrame.random(i, analysis)
       frames.append(g_rand.values)
       graphic_frames.append(g_rand)
-
     this._frames = np.array(frames)
     this._graphic_frames = graphic_frames
     return this
 
-
+  ################################
+  ## Properties
+  ################################
   def frames():
-      doc = "The frames property."
+      doc = "The frames of the analysis."
       def fget(self):
           return self._frames
       return locals()
@@ -75,18 +78,16 @@ class EEGElectrodeAnalysis(object):
   name = property(**name())
 
   def bands():
-      doc = "The bands property."
+      doc = "The names and analytic values of the bands as a Dictionary."
       def fget(self):
           return self._bands
       def fset(self, value):
           self._bands = value
-      def fdel(self):
-          del self._bands
       return locals()
   bands = property(**bands())
 
   def graphic_frames():
-      doc = "The graphic_frames property."
+      doc = "The GraphicEEGFrames in an array, one for each frame of analysis."
       def fget(self):
           return self._graphic_frames
       return locals()
