@@ -29,7 +29,7 @@ class EEGAnalysis(object):
     } # name: (minHz, maxHz)
     self._sr = sr # samplerate
     if electrode_order is None:
-      self._electrode_order = ['Fp1', 'Fp2', 'F7', 'F3', 'FZ', 'F4', 'F8', 'T7', 'C3', 'CZ', 'C4', 'T8', 'P7', 'P3', 'Pz', 'P4'] # 10-20 electrodes
+      self._electrode_order = ['Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2', 'F7', 'F8', 'T3', 'T4', 'T5', 'T6'] # default order from Dr. Moises Aguilar
     else:
       self._electrode_order = electrode_order
 
